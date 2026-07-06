@@ -125,14 +125,16 @@ streamlit run streamlit_app.py
 python -m mcp_server.server
 ```
 
-## Limitations & what's next
+## Limitations & What's Next
 
-This is **not a diagnostic tool**. The risk scoring is inspired by real clinical screening tools, not a validated implementation of them. Before anyone outside a personal or educational context used this, an actual mental health professional should review the thresholds and response logic.
+This is **not a diagnostic tool**. The risk scoring is inspired by real clinical screening tools, not a validated implementation of them. Before anyone outside a personal or educational context uses this, a qualified mental health professional should review the thresholds and response logic.
 
-Next steps on the list:
-- Proper long-term memory (currently a local JSON file, tied to one machine)
-- A mobile-friendly interface, since this is such a personal, on-the-go use case
-- With explicit consent, an optional way to loop in a trusted contact if risk stays high for several days in a row
+Upcoming features:
+
+Proper long-term memory (currently a local JSON file tied to one machine)
+A mobile-friendly interface, since this is such a personal, on-the-go use case
+With explicit user consent, an optional way to notify a trusted contact if risk remains high for several consecutive days
+Find nearby licensed therapists, counselors, and mental health support services based on the user's location, allowing users to access professional help when needed (with the user's permission)
 
 ## Built with
 
@@ -140,4 +142,4 @@ Python · Google ADK · Gemini · Model Context Protocol (MCP) · Streamlit
 
 ---
 
-*Built for the Kaggle "AI Agents: Intensive Vibe Coding" Capstone — Track: Agents for Good.*
+*Built for the Kaggle "5 Day AI Agents: Intensive Vibe Coding" Capstone — Track: Agents for Good.*
