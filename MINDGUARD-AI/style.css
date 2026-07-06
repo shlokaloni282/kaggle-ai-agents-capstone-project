@@ -1,0 +1,89 @@
+/* ============================================================
+   MindGuard AI — Calming Green Theme
+   ============================================================
+   This file holds all the custom styling for the Streamlit app,
+   kept separate from streamlit_app.py for cleanliness.
+
+   Color palette (soft sage/mint — calming, not clinical):
+   - Background:  #F4FAF6 → #EAF6EF (mint gradient)
+   - Sidebar:     #E4F2E9 (sage)
+   - Headings:    #1F4D34 (forest green)
+   - Buttons:     #5DA97A (sage green)
+   - Borders:     #CFE8D8 / #D9EEE0 (soft green)
+   ============================================================ */
+
+/* ---- Overall app background: soft mint gradient ---- */
+.stApp {
+  background: linear-gradient(180deg, #f4faf6 0%, #eaf6ef 100%);
+}
+
+/* ---- Sidebar: slightly deeper sage tone ---- */
+section[data-testid="stSidebar"] {
+  background: #e4f2e9;
+  border-right: 1px solid #cfe8d8;
+}
+
+section[data-testid="stSidebar"] .stMarkdown,
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span {
+  color: #1f4d34;
+}
+
+/* ---- Headings in calming forest green ---- */
+h1,
+h2,
+h3 {
+  color: #1f4d34 !important;
+  font-family: "Georgia", serif;
+}
+
+/* ---- Chat message bubbles ---- */
+div[data-testid="stChatMessage"] {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #d9eee0;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+}
+
+/* ---- Message text color ---- */
+div[data-testid="stChatMessageContent"] {
+  color: #234b36;
+}
+
+/* ---- Chat input box ---- */
+.stChatInput textarea {
+  border: 1.5px solid #a8d8bc !important;
+  border-radius: 12px !important;
+  background-color: black !important;
+}
+
+/* ---- Buttons: sage green, soft rounded ---- */
+.stButton button {
+  background-color: #5da97a;
+  color: white;
+  border-radius: 10px;
+  border: none;
+  padding: 6px 16px;
+  transition: background-color 0.2s ease;
+}
+
+.stButton button:hover {
+  background-color: #4b8f65;
+  color: white;
+}
+
+/* ---- Divider lines: soft green instead of harsh gray ---- */
+hr {
+  border-color: #cfe8d8 !important;
+}
+
+/* ---- Extra line spacing for readability ---- */
+.stMarkdown p {
+  line-height: 1.6;
+}
+
+/* ---- Spinner text color ---- */
+.stSpinner > div {
+  color: #4b8f65 !important;
+}
