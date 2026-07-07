@@ -97,8 +97,8 @@ MINDGUARD-AI/
 ### 1. Clone and set up a virtual environment
 
 ```bash
-git clone https://github.com/shlokaloni282/mindguard-ai.git
-cd mindguard-ai
+git clone https://github.com/shlokaloni282/kaggle-ai-agents-capstone-project.git
+cd kaggle-ai-agents-capstone-project/MINDGUARD-AI
 python -m venv venv
 source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
