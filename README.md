@@ -1,8 +1,8 @@
-# MindGuard AI 🧠💚
+# MindGuard AI 🌿💚
 
 **A multi-agent mental wellness companion for India's silent mental health crisis.**
 
-Daily AI-powered check-ins that catch early burnout and anxiety before they escalate — built with Google ADK, Gemini, and MCP.
+Daily AI-powered check-ins that catch early burnout and stress patterns before they escalate — built with Google ADK, Gemini, and MCP.
 
 > Built for the Kaggle "AI Agents: Intensive Vibe Coding" Capstone — **Track: Agents for Good**
 
@@ -12,7 +12,7 @@ Daily AI-powered check-ins that catch early burnout and anxiety before they esca
 
 Roughly 1 in 5 people in India experience a mental health condition, and close to 80% of them never seek help. MindGuard AI isn't therapy and it isn't diagnosis — it's the small, private, judgment-free moment of "how am I actually doing today" that most people never carve out time for.
 
-Every day, it asks a handful of short questions about mood, stress, sleep, and energy — loosely inspired by PHQ-2 and GAD-2, the same short screening tools used in real clinical settings (this is **not** a clinical implementation, just inspired by the same logic). It remembers your answers across days, not just today's, because burnout shows up as a trend, not a single bad day. If things look fine, you get a supportive nudge. If the pattern looks genuinely concerning, it surfaces real, verified Indian helplines — iCall, Vandrevala Foundation, KIRAN.
+Every day, it asks a handful of short questions about mood, stress, sleep, and energy. It remembers your answers across days, not just today's, because burnout shows up as a trend, not a single bad day. If things look fine, you get a supportive reflection and practical coping resources. If the pattern looks genuinely concerning, it surfaces search-backed support resources — and separately, a hard-coded safety net catches crisis language the moment it's typed, regardless of risk level.
 
 ## Architecture
 
@@ -22,41 +22,52 @@ User Input
     ▼
 MindGuardRootAgent (custom orchestrator, subclasses BaseAgent)
     │
-    ├── 1. CheckInAgent — asks the daily questions, waits until all are
-    │      answered before letting the pipeline continue
+    ├── 0. Deterministic safety_check() (security.py) — runs on
+    │      EVERY message, before any LLM call. Regex-based crisis
+    │      language detection. If triggered, responds immediately
+    │      with a hard-coded safety_response() (incl. India
+    │      Emergency: 112) and stops the pipeline for that turn.
+    │      This can't be reasoned around by prompt phrasing, and
+    │      costs no API call.
     │
-    ├── 2. AnalysisAgent — pulls mood history from memory, scores risk
-    │      (LOW / MEDIUM / HIGH) using PHQ-2 / GAD-2–inspired thresholds,
-    │      looks at multi-day trends rather than a single check-in
+    ├── 1. CheckInAgent — asks the daily questions one at a time,
+    │      waits until all four are answered before letting the
+    │      pipeline continue (signals via a CHECKIN_COMPLETE marker)
     │
-    ├── 3. ResponseAgent — writes a warm, personalized reply based on
-    │      that risk level
+    ├── 2. AnalysisAgent — pulls recent mood history from memory,
+    │      scores risk (LOW / MEDIUM / HIGH) based on today's answers
+    │      plus multi-day trends, not just a single check-in
     │
-    └── 4. ResourceAgent — only runs if risk is HIGH; uses Google
-           Search plus a hardcoded, verified list of Indian helplines
-           as a safety net
+    ├── 3. ResponseAgent — writes a warm, personalized reflection,
+    │      and can call wellness tools (breathing exercises,
+    │      grounding, journaling prompts, etc.) via MCP instead of
+    │      generating them freeform
+    │
+    └── 4. ResourceAgent — only runs if risk is HIGH; recommends
+           coping resources and, when appropriate, professional/
+           emergency support framing
     │
     ▼
-Persistent memory (memory/mood_store.py) — saves every check-in so
-tomorrow's agent isn't starting from zero
+Persistent memory (memory/mood_store.py) — saves every completed
+check-in as JSON so tomorrow's agent isn't starting from zero
 ```
 
 ### Why a custom orchestrator, not `SequentialAgent`
 
 The first version used ADK's `SequentialAgent`, which runs every sub-agent in order regardless of state. That meant analysis, response, and even the resource-search agent could fire before the check-in was actually complete — burning API calls on incomplete data and producing confusing output.
 
-The fix was subclassing `BaseAgent` directly to control the flow explicitly: don't move past check-in until it signals completion, and don't run resource search unless risk is actually high. This was the single biggest design decision in the project, and it came from hitting that wall during testing, not from planning it upfront.
+The fix was subclassing `BaseAgent` directly (`agents/root_agent.py`) to control the flow explicitly: don't move past check-in until it signals completion via `CHECKIN_COMPLETE`, and don't run the resource agent unless analysis actually reports HIGH risk. This was the single biggest design decision in the project, and it came from hitting that wall during testing, not from planning it upfront.
 
 ## Key concepts demonstrated
 
 | Concept | Where | How |
 |---|---|---|
 | **Multi-agent system (ADK)** | `agents/` | Four specialized `Agent` instances (CheckIn, Analysis, Response, Resource) coordinated by a custom `BaseAgent` orchestrator (`root_agent.py`) |
-| **MCP Server** | `mcp_server/` | `server.py` + `wellness_tools.py` expose wellness tooling through the Model Context Protocol, running over stdio |
-| **Security** | `security.py` | API keys loaded from environment variables, never committed to source |
-| **Sessions & long-term memory** | `memory/` | `InMemorySessionService` (`session_memory.py`) for per-turn context, plus `mood_store.py` persisting check-in history to disk so trends can be tracked across days |
-| **Custom tools** | `tools/` | A `FunctionTool`-based risk scorer applying fixed, explainable thresholds rather than leaving something this sensitive to free-form LLM judgment |
-| **Deployability** | `streamlit_app.py`, `mcp_server/` | Same agent core runs as a local Streamlit web app and as a local stdio-based MCP server, with no changes to the underlying logic |
+| **MCP Server** | `mcp_server/` | `server.py` (FastMCP over stdio) exposes deterministic, rule-based wellness tools from `wellness_tools.py` — breathing exercises, grounding activities, journal prompts, affirmations, sleep tips — which `response_agent` can call instead of generating them freeform |
+| **Deterministic safety layer** | `security.py` | Regex/keyword-based crisis language detection that runs on every user message before any LLM sub-agent executes. Model-independent by design, so it can't be talked out of firing, and costs no API call |
+| **Sessions & long-term memory** | `memory/mood_store.py` | JSON-backed persistent check-in history per user, surviving process restarts (unlike `InMemorySessionService` alone), enabling `AnalysisAgent` to detect multi-day trends |
+| **Conditional branching** | `agents/root_agent.py` | Orchestrator gates the pipeline on check-in completion, and only invokes `ResourceAgent` when risk is HIGH — rather than running every agent on every turn |
+| **Deployability** | `streamlit_app.py`, `mcp_server/` | Same agent core runs as a local Streamlit web app and as a local stdio-based MCP server, with no changes to the underlying agent logic |
 
 ## Project structure
 
@@ -66,22 +77,17 @@ MINDGUARD-AI/
 │   ├── root_agent.py        # Custom BaseAgent orchestrator
 │   ├── checkin_agent.py     # Daily check-in questions
 │   ├── analysis_agent.py    # Risk scoring + trend analysis
-│   ├── response_agent.py    # Warm, personalized replies
-│   └── resource_agent.py    # Helpline lookup (HIGH risk only)
+│   ├── response_agent.py    # Warm, personalized replies + MCP tool calls
+│   └── resource_agent.py    # Coping resources (HIGH risk gets extra framing)
 ├── mcp_server/
-│   ├── server.py             # MCP server over stdio
-│   └── wellness_tools.py     # Wellness tools exposed via MCP
+│   ├── server.py             # MCP server over stdio (FastMCP)
+│   └── wellness_tools.py     # Deterministic wellness tools exposed via MCP
 ├── memory/
-│   ├── mood_store.py         # Persistent JSON-backed check-in history
-│   └── session_memory.py     # InMemorySessionService wrapper
-├── tools/
-│   └── search_tool.py        # Google Search FunctionTool wrapper
-├── tests/
-│   └── test_agents.py
-├── main.py                   # Terminal entry point
-├── streamlit_app.py           # Streamlit UI (calming mint-green theme)
+│   └── mood_store.py         # Persistent JSON-backed check-in history
+├── security.py                # Deterministic crisis-language safety check
+├── main.py                    # Terminal entry point
+├── streamlit_app.py            # Streamlit UI (calming mint-green theme)
 ├── style.css
-├── security.py                # Env-based key handling
 ├── requirements.txt
 └── .gitignore
 ```
@@ -103,10 +109,10 @@ pip install -r requirements.txt
 Create a `.env` file in the project root:
 
 ```
-GEMINI_API_KEY=your_key_here
+GOOGLE_API_KEY=your_key_here
 ```
 
-Get a free Gemini API key from [Google AI Studio](https://aistudio.google.com/).
+Get a free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
 
 ### 3. Run it
 
@@ -120,25 +126,25 @@ python main.py
 streamlit run streamlit_app.py
 ```
 
-**MCP server** (stdio):
-```bash
-python -m mcp_server.server
-```
+The MCP server (`mcp_server/server.py`) doesn't need to be run separately —
+`response_agent.py` spawns it automatically as a stdio subprocess using the
+same Python interpreter, the moment the agent needs a wellness tool.
 
 ## Limitations & What's Next
 
-This is **not a diagnostic tool**. The risk scoring is inspired by real clinical screening tools, not a validated implementation of them. Before anyone outside a personal or educational context uses this, a qualified mental health professional should review the thresholds and response logic.
+This is **not a diagnostic tool**. The risk scoring reflects the LLM's judgment guided by prompt instructions, not a validated clinical implementation. Before anyone outside a personal or educational context uses this, a qualified mental health professional should review the response logic.
 
 Upcoming features:
 
-Proper long-term memory (currently a local JSON file tied to one machine)
-A mobile-friendly interface, since this is such a personal, on-the-go use case
-With explicit user consent, an optional way to notify a trusted contact if risk remains high for several consecutive days
-Find nearby licensed therapists, counselors, and mental health support services based on the user's location, allowing users to access professional help when needed (with the user's permission)
+- Named, verified Indian helplines (iCall, Vandrevala Foundation, KIRAN) alongside the current emergency number in the safety response
+- Cloud-based persistent memory (currently a local JSON file tied to one machine)
+- A mobile-friendly interface, since this is such a personal, on-the-go use case
+- With explicit user consent, an optional way to notify a trusted contact if risk remains high for several consecutive days
+- Finding nearby licensed therapists and counselors based on the user's location, with the user's permission
 
 ## Built with
 
-Python · Google ADK · Gemini · Model Context Protocol (MCP) · Streamlit
+Python · Google ADK · Gemini 2.5 Flash-Lite · Model Context Protocol (MCP) · Streamlit
 
 ---
 
