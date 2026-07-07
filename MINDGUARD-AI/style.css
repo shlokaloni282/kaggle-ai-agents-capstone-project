@@ -55,7 +55,8 @@ div[data-testid="stChatMessageContent"] {
 .stChatInput textarea {
   border: 1.5px solid #a8d8bc !important;
   border-radius: 12px !important;
-  background-color: black !important;
+  background-color: white !important; /* instead of black */
+  color: #234b36 !important;
 }
 
 /* ---- Buttons: sage green, soft rounded ---- */

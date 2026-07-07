@@ -1,56 +1,80 @@
-"""
-mcp_server/server.py
----------------------
-MindGuard's coping-tool library exposed as a real MCP server, using the
-official `mcp` Python SDK (FastMCP). This satisfies the capstone's
-"MCP Server" key concept: an agent (or any MCP-compatible client, including
-Claude Desktop or the ADK MCPToolset) can discover and call these tools
-over the Model Context Protocol instead of them being hardcoded prompt text.
-
-Run standalone (stdio transport, the standard for local MCP servers):
-    python -m mcp_server.server
-
-Run with the MCP Inspector for interactive testing:
-    npx @modelcontextprotocol/inspector python -m mcp_server.server
-
-To use this from an ADK agent, wrap it with ADK's MCPToolset pointed at
-this script via a StdioServerParameters connection -- see README.md.
-"""
-
 from mcp.server.fastmcp import FastMCP
 
-from mcp_server.wellness_tools import (
+from wellness_tools import (
     breathing_exercise,
-    journal_prompt,
     grounding_activity,
+    journal_prompt,
+    affirmation,
+    meditation,
+    sleep_tips,
+    gratitude_prompt,
+    activity_suggestion,
+    stress_relief,
+    therapist_finder,
 )
 
-mcp = FastMCP("mindguard-wellness-tools")
+mcp = FastMCP("mindguard_wellness_toolkit")
 
 
 @mcp.tool()
 def get_breathing_exercise() -> str:
-    """Return a short guided breathing exercise (box breathing) for
-    acute stress relief. Use when the user reports high stress or
-    anxiety in their check-in."""
+    """Guided breathing exercise."""
     return breathing_exercise()
 
 
 @mcp.tool()
+def get_grounding_activity() -> str:
+    """5-4-3-2-1 grounding exercise."""
+    return grounding_activity()
+
+
+@mcp.tool()
 def get_journal_prompt() -> str:
-    """Return a 5-minute journaling prompt to help the user process
-    what's affecting their mood. Use for low mood or rumination."""
+    """Daily journaling prompt."""
     return journal_prompt()
 
 
 @mcp.tool()
-def get_grounding_activity() -> str:
-    """Return a 5-4-3-2-1 sensory grounding exercise. Use when the
-    user reports anxiety, overwhelm, or difficulty focusing."""
-    return grounding_activity()
+def get_affirmation() -> str:
+    """Positive affirmation."""
+    return affirmation()
+
+
+@mcp.tool()
+def get_meditation() -> str:
+    """Five minute meditation."""
+    return meditation()
+
+
+@mcp.tool()
+def get_sleep_tips() -> str:
+    """Healthy sleep suggestions."""
+    return sleep_tips()
+
+
+@mcp.tool()
+def get_gratitude_prompt() -> str:
+    """Daily gratitude activity."""
+    return gratitude_prompt()
+
+
+@mcp.tool()
+def get_activity_suggestion(level: str) -> str:
+    """Suggest activity based on energy level."""
+    return activity_suggestion(level)
+
+
+@mcp.tool()
+def get_stress_relief() -> str:
+    """Quick stress relief exercise."""
+    return stress_relief()
+
+
+@mcp.tool()
+def find_nearby_therapists() -> str:
+    """Future therapist finder."""
+    return therapist_finder()
 
 
 if __name__ == "__main__":
-    # stdio transport -- the default for local/CLI MCP servers, and what
-    # ADK's MCPToolset + StdioServerParameters expects to connect to.
     mcp.run(transport="stdio")

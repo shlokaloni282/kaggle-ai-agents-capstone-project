@@ -17,7 +17,6 @@ with Streamlit's own internal event handling.
 import asyncio
 import re
 import sys
-import time
 from pathlib import Path
 from datetime import datetime
 
@@ -50,10 +49,6 @@ def _run_async(coro):
     Creates a brand-new event loop in a worker thread each call.
     This is the safest pattern on Windows where the main thread's
     event loop policy can be awkward inside Streamlit.
-
-    Includes a small delay before closing the loop to allow aiohttp
-    (used by google.genai) to gracefully shut down its connections,
-    preventing "Task was destroyed but it is pending!" warnings.
     """
     result = {}
 
@@ -65,7 +60,6 @@ def _run_async(coro):
         except Exception as exc:
             result["error"] = exc
         finally:
-            time.sleep(0.1)  # let aiohttp close connections before closing loop
             loop.close()
 
     import threading
@@ -89,12 +83,21 @@ def _strip_checkin_marker(text: str) -> str:
     visible output — while keeping any text that comes after it (the
     analysis/response/resource agents' output, which is concatenated
     onto the same string by _call_agent).
+
+    IMPORTANT: the previous version used text.split(marker)[0], which
+    kept only the text BEFORE the marker and silently discarded
+    everything after it -- including the wellness summary, coping
+    response, and helpline resources. That's why the app appeared to
+    "stop" right after check-in with no suggestions.
     """
     return re.sub(r"CHECKIN_COMPLETE\s*\n?\{[^}]*\}\s*", "", text).strip()
 
 
 def _time_based_greeting() -> str:
-    """Returns a warm greeting based on the current time of day."""
+    """
+    Returns a warm greeting based on the current time of day.
+    Morning: 5am-12pm | Afternoon: 12pm-5pm | Evening: 5pm-9pm | Night: 9pm-5am
+    """
     hour = datetime.now().hour
     if 5 <= hour < 12:
         return "Good morning"
@@ -110,6 +113,8 @@ RISK_COLOR = {"LOW": "🟢", "MEDIUM": "🟡", "HIGH": "🔴"}
 
 
 # ── page config ─────────────────────────────────────────────────────────────
+# Must be the very first Streamlit command in the script
+
 st.set_page_config(
     page_title="MindGuard AI",
     page_icon="🌿",
@@ -118,6 +123,8 @@ st.set_page_config(
 
 
 # ── calming green theme (loaded from external style.css) ────────────────────
+# Keeping CSS in its own file makes both files easier to read and edit.
+
 def _load_css(file_name: str):
     """Reads a CSS file from the project root and injects it into the page."""
     css_path = ROOT / file_name
@@ -156,59 +163,27 @@ def _get_session_id(session_service: InMemorySessionService) -> str:
 
 
 async def _call_agent(runner: Runner, session_id: str, user_text: str) -> str:
-    """Send one message and collect the full streamed response.
-
-    Handles BOTH 429 (rate limit) and 503 (server overloaded) with
-    exponential backoff, so a temporary Google-side issue doesn't
-    interrupt the full pipeline (checkin → analysis → response → resources).
-    """
-    await asyncio.sleep(0.5)  # small buffer to avoid rapid-fire requests
-
+    """Send one message and collect the full streamed response."""
     message = types.Content(
         role="user",
         parts=[types.Part(text=user_text)],
     )
-
-    max_retries = 4  # bumped up from 2 — 503s can take a few tries to clear
-    for attempt in range(max_retries):
-        try:
-            full_text = ""
-            async for event in runner.run_async(
-                user_id=USER_ID,
-                session_id=session_id,
-                new_message=message,
-            ):
-                if event.content and event.content.parts:
-                    part_text = event.content.parts[0].text or ""
-                    full_text += part_text
-            return full_text
-
-        except ClientError as e:
-            code = getattr(e, "code", None)
-            is_last_attempt = attempt == max_retries - 1
-
-            if code == 429 and not is_last_attempt:
-                wait_time = 2 ** (attempt + 1)  # 2s, 4s, 8s, 16s
-                st.toast(f"⏳ Rate limited — retrying in {wait_time}s...")
-                time.sleep(wait_time)
-                continue
-
-            if code == 503 and not is_last_attempt:
-                wait_time = 4 + (attempt * 3)  # 4s, 7s, 10s, 13s
-                st.toast(f"⏳ Google's servers are busy — retrying in {wait_time}s...")
-                time.sleep(wait_time)
-                continue
-
-            # Either a different error, or we've used up all retries
-            raise
-
-    return ""
+    full_text = ""
+    async for event in runner.run_async(
+        user_id=USER_ID,
+        session_id=session_id,
+        new_message=message,
+    ):
+        if event.content and event.content.parts:
+            part_text = event.content.parts[0].text or ""
+            full_text += part_text
+    return full_text
 
 
 runner, session_service = _build_runner()
 
 if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+    st.session_state.chat_history = []   # list of {"role": "user"|"ai", "text": str}
 if "last_risk" not in st.session_state:
     st.session_state.last_risk = None
 if "user_name" not in st.session_state:
@@ -221,6 +196,7 @@ with st.sidebar:
     st.title("🌿 MindGuard AI")
     st.caption("Your daily mental wellness companion")
 
+    # Ask for the user's name once, store it for the greeting
     if not st.session_state.user_name:
         name_input = st.text_input("What should I call you?", placeholder="e.g. Shloka")
         if name_input:
@@ -229,6 +205,7 @@ with st.sidebar:
 
     st.divider()
 
+    # Risk level badge
     risk = st.session_state.last_risk
     if risk:
         icon = RISK_COLOR.get(risk, "⚪")
@@ -236,6 +213,7 @@ with st.sidebar:
         st.markdown(f"**Today's risk level:** :{color}[{icon} {risk}]")
         st.divider()
 
+    # Recent mood history
     st.subheader("📊 Mood history (last 7 days)")
     history = get_recent_history(USER_ID, days=7)
     if not history:
@@ -261,6 +239,7 @@ with st.sidebar:
 
 # ── main chat area ────────────────────────────────────────────────────────────
 
+# Time-based, personalized greeting header
 greeting = _time_based_greeting()
 if st.session_state.user_name:
     header_text = f"{greeting}, {st.session_state.user_name} 🌿"
@@ -270,26 +249,32 @@ else:
 st.header(header_text, divider="green")
 st.caption("Take a breath. I'm here whenever you're ready to check in.")
 
+# Render history
 for msg in st.session_state.chat_history:
     role = "user" if msg["role"] == "user" else "assistant"
     with st.chat_message(role):
         st.markdown(msg["text"])
 
+# Input
 user_input = st.chat_input("How are you doing today?")
 
 if user_input:
+    # Show the user's message immediately
     st.session_state.chat_history.append({"role": "user", "text": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
+    # Call the agent
     with st.chat_message("assistant"):
         with st.spinner("MindGuard AI is thinking..."):
             try:
                 session_id = _get_session_id(session_service)
                 raw = _run_async(_call_agent(runner, session_id, user_input))
 
+                # Strip the internal CHECKIN_COMPLETE marker before displaying
                 visible = _strip_checkin_marker(raw)
 
+                # Extract risk level if present
                 risk = _parse_risk(raw)
                 if risk:
                     st.session_state.last_risk = risk
@@ -298,26 +283,15 @@ if user_input:
                 st.session_state.chat_history.append({"role": "ai", "text": visible})
 
             except ClientError as e:
-                code = getattr(e, "code", None)
-
-                if code == 429:
+                if getattr(e, "code", None) == 429:
                     msg = (
-                        "⏳ **Rate limit reached** — the free tier allows a limited number "
-                        "of requests per minute. Wait **30-60 seconds**, then try your last "
-                        "response again. (If this persists, you may have hit the daily free "
-                        "tier limit — come back tomorrow!)"
+                        "⏳ Rate limit reached — the free tier allows a handful of "
+                        "requests per minute. Wait about 30–60 seconds, then send "
+                        "your message again."
                     )
-                elif code == 503:
-                    msg = (
-                        "⏳ **Google's servers are experiencing high demand** right now, even "
-                        "after several retries. This usually clears within a minute or two — "
-                        "please wait and try again."
-                    )
+                    st.warning(msg)
+                    st.session_state.chat_history.append({"role": "ai", "text": msg})
                 else:
-                    msg = f"API error: {e}"
-
-                st.error(msg)
-                st.session_state.chat_history.append({"role": "ai", "text": msg})
-
+                    st.error(f"API error: {e}")
             except Exception as e:
                 st.error(f"Something went wrong: {e}")

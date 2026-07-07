@@ -1,143 +1,185 @@
-# Mental Wellness Check-in & Burnout Prevention Agent
+# MindGuard AI
 
-A multi-agent system built with Google's Agent Development Kit (ADK) and
-Gemini that runs a 2-minute daily mood check-in, tracks patterns over time
-using PHQ-2/GAD-2 screening logic, and responds with personalized coping
-strategies — escalating to verified local resources when risk is high.
+A multi-agent mental wellness check-in system built with Google's Agent
+Development Kit (ADK) and Gemini. Runs a short daily mood check-in, analyzes
+today's state alongside recent history, responds with warmth and practical
+coping tools, and escalates to real support resources only when risk is
+genuinely high.
 
 **Track:** Agents for Good — Mental Health
 **Course:** Kaggle 5-Day AI Agents Intensive: Vibe Coding with Google
 
 ## Problem
 
-An estimated 1 in 5 people in India experience a mental health condition in
-a given year, and the large majority never seek help — largely due to
-stigma, cost, and simply not noticing early warning signs until they've
-escalated. Most people don't have a low-friction, private way to notice
-"I've been sleeping badly and snapping at people for 10 days straight" until
-it's a crisis.
+Most people don't have a low-friction, private way to notice a pattern in
+their own wellbeing — like a week of bad sleep and rising stress — before it
+escalates into something bigger. Daily mental health tracking tools that
+exist tend to feel either clinical or too heavyweight for someone to keep up
+with day after day.
 
 ## Solution
 
-A daily 2-minute check-in that a person can do from their phone, that quietly
-builds a picture of their mood over weeks — the way a good friend would
-notice a pattern — and nudges them toward a coping strategy or professional
-help _before_ things escalate, not after.
+A conversational daily check-in (mood, stress, sleep, energy) that takes
+under a minute, remembers your history across days, and responds like
+someone who's actually paying attention — not a form, and not a diagnosis
+engine. If things look genuinely high-risk, it also surfaces grounded
+support resources instead of just more encouragement.
 
 ## Architecture
 
 ```
-                         ┌─────────────────────────┐
-                         │   WellnessRootAgent      │
-                         │  (custom orchestrator)   │
-                         └────────────┬─────────────┘
-                                      │
-        ┌─────────────────────────────┼─────────────────────────────┐
-        │                             │                             │
-        ▼                             ▼                             ▼
-┌───────────────────┐      ┌───────────────────────┐      ┌──────────────────┐
-│  1. CheckInAgent   │      │ 2. PatternAnalysis     │      │ 3. ResponseAgent │
-│  (LoopAgent)       │ ───▶ │    Agent (LlmAgent)    │ ───▶ │   (LlmAgent)     │
-│  asks mood Qs,     │      │  reads 7-14 day        │      │  low/mod: coping │
-│  loops until       │      │  history, scores       │      │  strategy        │
-│  complete           │      │  PHQ-2/GAD-2 + trend    │      │  high: gentle    │
-│  (max 5 turns)     │      │  -> risk_tier           │      │  helpline nudge  │
-└─────────┬──────────┘      └────────────┬────────────┘      └────────┬─────────┘
-          │                              │                            │
-          ▼                              ▼                            │ if risk_tier
-┌───────────────────┐        ┌───────────────────────┐                │  == "high"
-│  mood_store.py     │◀──────│  score_risk() tool     │                ▼
-│  (JSON, per-user,  │       │  deterministic rules   │      ┌──────────────────────┐
-│  persists across   │       └───────────────────────┘      │ 4. ResourceFinder     │
-│  sessions/days)    │                                      │    Agent (LlmAgent)   │
-└────────────────────┘                                      │  google_search tool   │
-                                                              │  -> local therapists, │
-                                                              │  support groups       │
-                                                              └──────────────────────┘
+                          ┌───────────────────────────┐
+                          │      User Input             │
+                          └─────────────┬─────────────┘
+                                        ▼
+                          ┌───────────────────────────┐
+                          │   MindGuardRootAgent         │
+                          │ (custom orchestrator,        │
+                          │  subclasses BaseAgent)        │
+                          └─────────────┬─────────────┘
+                                        │
+                0. Deterministic safety_check() on every message
+                   (security.py — runs BEFORE any LLM call)
+                   If crisis language detected -> hard-coded
+                   safety_response() with emergency numbers,
+                   pipeline stops here for this turn.
+                                        │
+                                        ▼
+                          ┌───────────────────────────┐
+                          │   1. checkin_agent           │
+                          │   Asks mood / stress /        │
+                          │   sleep quality / energy,     │
+                          │   one question at a time.     │
+                          │   Emits CHECKIN_COMPLETE       │
+                          │   + JSON once all 4 collected.│
+                          └─────────────┬─────────────┘
+                                        │
+                   If not complete yet -> orchestrator stops
+                   and waits for the user's next answer.
+                                        │
+                                        ▼
+                    entry saved to memory/mood_store.py (JSON,
+                    persists across runs) + recent history pulled
+                    into session state for trend detection
+                                        │
+                                        ▼
+                          ┌───────────────────────────┐
+                          │   2. analysis_agent          │
+                          │   Scores today's check-in     │
+                          │   + recent history ->          │
+                          │   RISK LEVEL: LOW/MEDIUM/HIGH │
+                          └─────────────┬─────────────┘
+                                        ▼
+                          ┌───────────────────────────┐
+                          │   3. response_agent           │
+                          │   Warm, empathetic reflection.│
+                          │   Can call wellness_tools       │
+                          │   via MCP (breathing, grounding,│
+                          │   journaling, affirmations...) │
+                          └─────────────┬─────────────┘
+                                        │
+                          only if risk_level == "HIGH"
+                                        ▼
+                          ┌───────────────────────────┐
+                          │   4. resource_agent           │
+                          │   Recommends coping resources │
+                          │   + professional/emergency     │
+                          │   support framing for HIGH     │
+                          │   risk days.                   │
+                          └───────────────────────────┘
 ```
 
-To render this as an image for your Writeup, paste the block into
-[mermaid.live](https://mermaid.live) using the flow above, or take a
-screenshot of this ASCII diagram — either is fine for the submission.
+A rendered version of this diagram is included in the Writeup's media
+gallery.
 
-## ADK concepts used
+## ADK / course concepts used
 
-| Concept                           | Where                                                                                          |
-| --------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Multi-agent system (4 sub-agents) | `agents/`                                                                                      |
-| LoopAgent                         | `checkin_agent.py` — loops until all mood fields are captured                                  |
-| Custom orchestrator (BaseAgent)   | `root_agent.py` — conditional branching to resource finder                                     |
-| Session state                     | passed via `InvocationContext.session.state` across all agents                                 |
-| Long-term memory across sessions  | `memory/mood_store.py` — JSON store, survives restarts (InMemorySessionService alone does not) |
-| Google Search tool                | `resource_finder_agent.py`                                                                     |
-| FunctionTool                      | `score_risk`, `get_recent_history_tool`, `add_entry_tool`                                      |
-| Gemini as LLM backbone            | `gemini-2.0-flash` everywhere (bonus)                                                          |
+| Concept                           | Where                                                                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Multi-agent system (4 sub-agents) | `agents/`                                                                                                             |
+| Custom orchestrator (`BaseAgent`) | `agents/root_agent.py` — gates the pipeline on check-in completion and branches to `resource_agent` only on HIGH risk |
+| Session state                     | `ctx.session.state["mood_history"]`, passed into `analysis_agent`                                                     |
+| Long-term memory across sessions  | `memory/mood_store.py` — JSON store, survives restarts (unlike `InMemorySessionService` alone)                        |
+| MCP Server                        | `mcp_server/server.py` (FastMCP) exposing `wellness_tools.py` as callable tools                                       |
+| Deterministic safety layer        | `security.py` — regex-based crisis detection, runs before any LLM call, cannot be prompt-talked out of firing         |
+| Gemini as LLM backbone            | `gemini-2.5-flash-lite` across all four agents                                                                        |
 
-## Why LoopAgent isn't used for "daily" timing
+## Why a custom orchestrator instead of `SequentialAgent`
 
-ADK's `LoopAgent` loops sub-agents repeatedly **within a single run** — it
-doesn't wait for real calendar days to pass. We use it correctly here to
-re-ask incomplete check-in questions in one sitting. The actual "once a day"
-cadence is a scheduling problem, not an agent problem: deploy `main.py`'s
-logic behind a Cloud Run endpoint and trigger it once daily with Cloud
-Scheduler (or plain cron if self-hosting). This is called out explicitly so
-judges see the distinction is understood, not glossed over.
+ADK's `SequentialAgent` runs every sub-agent back-to-back on every single
+call to `runner.run_async()` — with no way to say "check-in isn't finished,
+stop here." Early in development this caused `analysis_agent`,
+`response_agent`, and `resource_agent` to fire on incomplete check-in data,
+burning API quota before the user had even answered all four questions.
+
+`MindGuardRootAgent` (in `agents/root_agent.py`) fixes this by running
+`checkin_agent` every turn, and only continuing to `analysis_agent` →
+`response_agent` → conditionally `resource_agent` once `checkin_agent`
+itself signals completion via a `CHECKIN_COMPLETE` marker.
+
+It also conditionally runs `resource_agent` only when `analysis_agent`
+reports `HIGH` risk — a real Google-Search-capable agent shouldn't fire on
+an ordinary day.
+
+## Safety notes
+
+- The agent never diagnoses. Prompts across all agents explicitly instruct
+  against medical/clinical language.
+- `security.py` runs a deterministic, keyword/pattern-based crisis check on
+  **every** user message, before any LLM sub-agent runs — this is
+  intentionally not model-dependent, so it can't be reasoned or prompted
+  out of firing, and costs no API call.
+- Crisis response text (including emergency numbers) is hardcoded in
+  `security.py`, not generated by an LLM, so it can't be hallucinated.
+  Currently set to India Emergency (112) — would need localization for
+  broader deployment.
 
 ## Setup
 
 ```bash
 git clone <your-repo-url>
-cd mental_wellness_agent
+cd MINDGUARD-AI
+python -m venv venv
+venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 
 # Get a free API key from https://aistudio.google.com/apikey
-export GOOGLE_API_KEY="your-key-here"
+# Create a .env file in the project root:
+echo GOOGLE_API_KEY=your-key-here > .env
 
+# CLI version
 python main.py
+
+# Or the Streamlit chat interface
+streamlit run streamlit_app.py
 ```
 
-No paid APIs required — Gemini's free tier and ADK's built-in `google_search`
-tool are both zero-cost for demo-scale usage.
-
-## Deployability (bonus)
-
-To deploy to Cloud Run:
-
-```bash
-gcloud run deploy mental-wellness-agent \
-  --source . \
-  --set-env-vars GOOGLE_API_KEY=$GOOGLE_API_KEY \
-  --allow-unauthenticated
-```
-
-Swap `memory/mood_store.py`'s JSON file for Firestore if you need durability
-across container restarts in production (containers on Cloud Run are
-ephemeral — local JSON files won't survive a redeploy).
-
-## Safety notes
-
-- The agent never diagnoses. PHQ-2/GAD-2 are validated _screening_ tools,
-  not diagnostic instruments, and the prompts are written to reflect that.
-- Crisis helpline numbers are hardcoded in `response_agent.py`, not
-  generated by the LLM, so they can't be hallucinated. Verify they're still
-  current before any real deployment.
-- `ResourceFinderAgent` is instructed to only report search results it can
-  verify are real and current — fewer verified resources over padded lists.
+No paid APIs required — Gemini's free tier covers demo-scale usage.
 
 ## Repo structure
 
 ```
-mental_wellness_agent/
+MINDGUARD-AI/
 ├── agents/
-│   ├── checkin_agent.py          # Sub-agent 1 + LoopAgent
-│   ├── pattern_analysis_agent.py # Sub-agent 2
-│   ├── response_agent.py         # Sub-agent 3
-│   ├── resource_finder_agent.py  # Sub-agent 4 + google_search
-│   └── root_agent.py             # Custom orchestrator, wires 1-4
+│   ├── checkin_agent.py     # Sub-agent 1: collects mood/stress/sleep/energy
+│   ├── analysis_agent.py    # Sub-agent 2: risk scoring + trend detection
+│   ├── response_agent.py    # Sub-agent 3: empathetic reflection, MCP tool calls
+│   ├── resource_agent.py    # Sub-agent 4: coping resources, HIGH-risk only
+│   └── root_agent.py        # Custom BaseAgent orchestrator, wires 1-4
 ├── memory/
-│   └── mood_store.py             # Persistent long-term memory (JSON)
-├── data/                         # Per-user mood history JSON files (gitignored)
-├── main.py                       # CLI entrypoint / demo runner
+│   └── mood_store.py        # Persistent JSON mood history per user
+├── mcp_server/
+│   ├── server.py            # FastMCP server exposing wellness tools
+│   └── wellness_tools.py    # Deterministic, rule-based wellness content
+├── security.py               # Deterministic crisis-language safety check
+├── streamlit_app.py          # Chat UI (calming green theme, mood history sidebar)
+├── style.css                 # Streamlit theme
+├── main.py                   # CLI entrypoint
 ├── requirements.txt
 └── README.md
 ```
+
+## Roadmap (post-submission)
+
+Planning a full-stack rebuild with FastAPI, React, and MongoDB Atlas to turn
+this into a deployed, portfolio-ready app beyond the Kaggle capstone scope.
