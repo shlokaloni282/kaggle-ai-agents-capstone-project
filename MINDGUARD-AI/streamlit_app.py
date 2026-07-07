@@ -15,6 +15,7 @@ with Streamlit's own internal event handling.
 """
 
 import asyncio
+import json
 import re
 import sys
 from pathlib import Path
@@ -39,6 +40,10 @@ from memory.mood_store import get_recent_history  # noqa: E402
 
 APP_NAME = "agents"
 USER_ID = "user1"
+
+# Where past chat transcripts are saved for the history browser.
+# Pure local JSON, no API calls involved in reading/writing this.
+TRANSCRIPT_PATH = ROOT / "data" / "chat_transcripts.json"
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -107,6 +112,41 @@ def _time_based_greeting() -> str:
         return "Good evening"
     else:
         return "Hi there, night owl"
+
+
+def _save_transcript(risk: str):
+    """Save the current chat_history as a browsable past conversation.
+
+    Called once a check-in completes and produces a risk level. Pure
+    local JSON read/write -- no API calls, so this works even mid
+    rate-limit.
+    """
+    TRANSCRIPT_PATH.parent.mkdir(exist_ok=True)
+    try:
+        transcripts = (
+            json.loads(TRANSCRIPT_PATH.read_text())
+            if TRANSCRIPT_PATH.exists()
+            else []
+        )
+    except Exception:
+        transcripts = []
+
+    transcripts.append({
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "risk": risk,
+        "messages": st.session_state.chat_history.copy(),
+    })
+    TRANSCRIPT_PATH.write_text(json.dumps(transcripts, indent=2))
+
+
+def _load_transcripts() -> list[dict]:
+    """Read all saved past conversations, most recent last."""
+    if not TRANSCRIPT_PATH.exists():
+        return []
+    try:
+        return json.loads(TRANSCRIPT_PATH.read_text())
+    except Exception:
+        return []
 
 
 RISK_COLOR = {"LOW": "🟢", "MEDIUM": "🟡", "HIGH": "🔴"}
@@ -231,6 +271,30 @@ with st.sidebar:
             )
 
     st.divider()
+
+    # ── Past conversations browser ──────────────────────────────────────
+    # Reads saved transcripts from disk -- no API calls, works even
+    # mid rate-limit. Selecting one loads it into chat_history so it
+    # renders in the main chat area exactly like a live conversation.
+    st.subheader("🕓 Past conversations")
+    past_convos = list(reversed(_load_transcripts()))  # most recent first
+    if past_convos:
+        labels = [f"{c['date']} — {c['risk']}" for c in past_convos]
+        choice = st.selectbox(
+            "Load a past check-in",
+            ["(current session)"] + labels,
+            key="past_convo_select",
+        )
+        if choice != "(current session)":
+            picked = past_convos[labels.index(choice)]
+            if st.button("📂 Load this conversation"):
+                st.session_state.chat_history = picked["messages"]
+                st.session_state.last_risk = picked["risk"]
+                st.rerun()
+    else:
+        st.caption("No saved conversations yet — complete a check-in to save one.")
+
+    st.divider()
     if st.button("🗑️ Clear chat"):
         st.session_state.chat_history = []
         st.session_state.last_risk = None
@@ -281,6 +345,12 @@ if user_input:
 
                 st.markdown(visible)
                 st.session_state.chat_history.append({"role": "ai", "text": visible})
+
+                # Once a check-in completes and produces a risk level,
+                # save this full conversation so it can be reloaded later
+                # from the "Past conversations" browser in the sidebar.
+                if risk:
+                    _save_transcript(risk)
 
             except ClientError as e:
                 if getattr(e, "code", None) == 429:
