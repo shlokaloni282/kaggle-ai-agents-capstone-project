@@ -142,6 +142,8 @@ Upcoming features:
 - With explicit user consent, an optional way to notify a trusted contact if risk remains high for several consecutive days
 - Finding nearby licensed therapists and counselors based on the user's location, with the user's permission
 
+##Demo Video(YT): https://youtu.be/HFeeNHSrJBg?si=mQ81WRrEzGYBWKIz
+
 ## Built with
 
 Python · Google ADK · Gemini 2.5 Flash-Lite · Model Context Protocol (MCP) · Streamlit
